@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http#{//mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fiats.arrangement.mapper.BackSupportMapper">
+    <sql id="retrieveArrangementsWhere">
+        <if test="filter.tradingDateFrom != null">
+            AND arr.TRADING_DATE &gt;= #{filter.tradingDateFrom}
+        </if>
+        <if test="filter.tradingDateTo != null">
+            AND arr.TRADING_DATE &lt;= #{filter.tradingDateTo}
+        </if>
+        <if test="filter.matchingDateFrom != null">
+            AND marr.TRADING_DATE &gt;= #{filter.matchingDateFrom}
+        </if>
+        <if test="filter.matchingDateTo != null">
+            AND marr.TRADING_DATE &lt;= #{filter.matchingDateTo}
+        </if>
+        <if test="filter.deliveryDateFrom != null">
+            AND oma.DELIVERY_STATUS_DATE &gt;= #{filter.deliveryDateFrom}
+        </if>
+        <if test="filter.deliveryDateTo != null">
+            AND oma.DELIVERY_STATUS_DATE &lt;= #{filter.deliveryDateTo}
+        </if>
+        <if test="filter.partyId != null">
+            AND poa.CUSTOMER_ID = #{filter.partyId}
+        </if>
+        <if test="filter.arrangementCode != null and filter.arrangementCode != ''">
+            <bind name="pattern" value="'%' + filter.arrangementCode + '%'" />
+            AND arr.CODE like #{pattern}
+        </if>
+        <if test="filter.arrangementType != null and filter.arrangementType.size() > 0">
+            AND arr.TYPE IN
+            <foreach item="item" index="index" collection="filter.arrangementType" open="(" separator="," close=")">
+                #{item}
+            </foreach>
+        </if>
+        <if test="filter.exception != null">
+            <if test="filter.exception">
+                AND arr.EXCEPTION = #{filter.exception}
+            </if>
+            <if test="!filter.exception">
+                AND (arr.EXCEPTION IS NULL OR arr.EXCEPTION = 0)
+            </if>
+        </if>
+        <if test="filter.derivativeId != null and filter.derivativeId.size() > 0">
+            AND arr.PROD_DERIVATIVE_ID IN
+            <foreach item="item" index="index" collection="filter.derivativeId" open="(" separator="," close=")">
+                #{item}
+            </foreach>
+        </if>
+        <if test="filter.status != null and filter.status.size() > 0">
+            AND arr.STATUS IN
+            <foreach item="item" index="index" collection="filter.status" open="(" separator="," close=")">
+                #{item}
+            </foreach>
+        </if>
+        <if test="filter.operationStatus != null and filter.operationStatus.size() > 0">
+            <foreach collection="filter.operationStatus" index="key" item="value" separator="">
+                <choose>
+                    <when test = "key == 'SIGN_STATUS'">
+                        AND oa.CUSTOMER_STATUS IN
+                    </when>
+                    <when test = "key == 'CONTRACT_STATUS'">
+                        AND oa.CONTRACT_STATUS IN
+                    </when>
+                    <when test = "key == 'PAYMENT_STATUS'">
+                        AND oma.PAYMENT_STATUS IN
+                    </when>
+                    <when test = "key == 'DELIVERY_STATUS'">
+                        AND oma.DELIVERY_STATUS IN
+                    </when>
+                    <when test = "key == 'COLLATERAL_STATUS'">
+                        AND oma.COLLATERAL_STATUS IN
+                    </when>
+                </choose>
+                <foreach collection="value" index="index" item="item" open="(" separator="," close=")">
+                    ${item}
+                </foreach>
+            </foreach>
+        </if>
+    </sql>
+
+    <select id="retrieveArrangementsCount" resultType="Long">
+        SELECT  count(*)
+        FROM ARRANGEMENT arr
+                INNER JOIN ARRANGEMENT_PARTY poa ON (arr.ID = poa.ARRANGEMENT_ID AND poa.ROLE = 'OWNER')
+                INNER JOIN ARRANGEMENT_OPERATION oa ON arr.ID = oa.ARRANGEMENT_ID
+                INNER JOIN ARRANGEMENT_PRICING pa ON arr.ID = pa.ARRANGEMENT_ID
+                LEFT JOIN ARRANGEMENT_RELATION ra ON (arr.ID = ra.RELATED_ARRANGEMENT_ID AND ra.TYPE = 1)
+                LEFT JOIN ARRANGEMENT_OPERATION oma ON ra.ID = oma.ARRANGEMENT_RELATION_ID
+                LEFT JOIN ARRANGEMENT marr ON (ra.ARRANGEMENT_ID = marr.ID AND marr.TYPE = 3)
+                LEFT JOIN ARRANGEMENT_PRICING pma on marr.ID = pma.ARRANGEMENT_ID
+        WHERE 1 = 1
+        <include refid="com.fiats.arrangement.mapper.BackSupportMapper.retrieveArrangementsWhere"/>
+    </select>
+
+    <select id="retrieveArrangements" resultType="com.fiats.tmgcoreutils.payload.ArrangementInfoDTO">
+        SELECT  arr.id arrangementId
+                , marr.ID matchedId
+                , oa.CUSTOMER_STATUS customerStatus
+                , oa.CONTRACT_STATUS contractStatus
+                , oma.PAYMENT_STATUS paymentStatus
+                , oma.DELIVERY_STATUS deliveryStatus
+                , arr.CODE arrangementCode
+                , arr.TYPE arrangementType
+                , arr.TRADING_DATE tradingDate
+                , marr.TRADING_DATE matchingDate
+                , oma.PAYMENT_STATUS_DATE paymentDate
+                , oma.DELIVERY_STATUS_DATE deliveryDate
+                , poa.CUSTOMER_ID partyId
+                , arr.VOLUME volume
+                , pa.PRICE price
+                , pa.UNIT_PRICE unitPrice
+                , pa.FEE transactionFee
+                , pa.PRINCIPAL principal
+                , arr.status
+                , arr.PROD_DERIVATIVE_CODE derivativeCode
+        FROM ARRANGEMENT arr
+                INNER JOIN ARRANGEMENT_PARTY poa ON (arr.ID = poa.ARRANGEMENT_ID AND poa.ROLE = 'OWNER')
+                INNER JOIN ARRANGEMENT_OPERATION oa ON arr.ID = oa.ARRANGEMENT_ID
+                INNER JOIN ARRANGEMENT_PRICING pa ON arr.ID = pa.ARRANGEMENT_ID
+                LEFT JOIN ARRANGEMENT_RELATION ra ON (arr.ID = ra.RELATED_ARRANGEMENT_ID AND ra.TYPE = 1)
+                LEFT JOIN ARRANGEMENT_OPERATION oma ON ra.ID = oma.ARRANGEMENT_RELATION_ID
+                LEFT JOIN ARRANGEMENT marr ON (ra.ARRANGEMENT_ID = marr.ID AND marr.TYPE = 3)
+                LEFT JOIN ARRANGEMENT_PRICING pma on marr.ID = pma.ARRANGEMENT_ID
+        WHERE 1 = 1
+        <include refid="com.fiats.arrangement.mapper.BackSupportMapper.retrieveArrangementsWhere"/>
+        ORDER BY arr.TRADING_DATE DESC, arr.CREATED_DATE DESC
+    </select>
+</mapper>

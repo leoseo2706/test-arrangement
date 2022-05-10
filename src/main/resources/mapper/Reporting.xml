@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http#{//mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.fiats.arrangement.mapper.ReportingMapper">
+    <sql id="reportCounter">
+        SELECT  COUNT(*) totalRecord,
+                COUNT(CASE WHEN arr.TYPE = 1 then 1 ELSE NULL END) totalBuyArrangement,
+                SUM(CASE WHEN arr.TYPE = 1 then marr.VOLUME ELSE 0 END) totalBuyVolume,
+                SUM(CASE WHEN arr.TYPE = 1 then pma.PRICE ELSE 0 END) totalBuyPrice,
+                SUM(CASE WHEN arr.TYPE = 1 then pma.PRINCIPAL ELSE 0 END) totalBuyPrincipal,
+                COUNT(CASE WHEN arr.TYPE = 2 then 1 ELSE NULL END) totalSellArrangement,
+                SUM(CASE WHEN arr.TYPE = 2 then marr.VOLUME ELSE 0 END) totalSellVolume,
+                SUM(CASE WHEN arr.TYPE = 2 then pma.PRICE ELSE 0 END) totalSellPrice,
+                SUM(CASE WHEN arr.TYPE = 2 then pma.PRINCIPAL ELSE 0 END) totalSellPrincipal,
+                COUNT(CASE WHEN oma.PAYMENT_STATUS = 1 AND oma.DELIVERY_STATUS = 1 then 1 ELSE NULL END) totalDoneArrangement,
+                SUM(CASE WHEN oma.PAYMENT_STATUS = 1 AND oma.DELIVERY_STATUS = 1 then marr.VOLUME ELSE 0 END) totalDoneVolume,
+                SUM(CASE WHEN oma.PAYMENT_STATUS = 1 AND oma.DELIVERY_STATUS = 1 then pma.PRICE ELSE 0 END) totalDonePrice,
+                SUM(CASE WHEN oma.PAYMENT_STATUS = 1 AND oma.DELIVERY_STATUS = 1 then pma.PRINCIPAL ELSE 0 END) totalDonePrincipal,
+                COUNT(CASE WHEN arr.STATUS = 2 then 1 ELSE NULL END) totalCancelArrangement,
+                SUM(CASE WHEN arr.STATUS = 2 then marr.VOLUME ELSE 0 END) totalCancelVolume,
+                SUM(CASE WHEN arr.STATUS = 2 then pma.PRICE ELSE 0 END) totalCancelPrice,
+                SUM(CASE WHEN arr.STATUS = 2 then pma.PRINCIPAL ELSE 0 END) totalCancelPrincipal
+    </sql>
+    <sql id="retrieveMatchedArrangementWhere">
+        <if test="filter.tradingDate != null">
+            AND arr.TRADING_DATE = #{filter.tradingDate}
+        </if>
+        <if test="filter.customerId != null">
+            AND poa.CUSTOMER_ID = #{filter.customerId}
+        </if>
+        <if test="filter.brokerId != null">
+            AND pba.CUSTOMER_ID = #{filter.brokerId}
+        </if>
+        <if test="filter.agencyId != null">
+            AND arr.AGENCY_ID = #{filter.agencyId}
+        </if>
+        <if test="filter.arrangementCode != null and filter.arrangementCode != ''">
+            <bind name="pattern" value="'%' + filter.arrangementCode + '%'" />
+            AND arr.CODE like #{pattern}
+        </if>
+        <if test="filter.arrangementType != null">
+            AND arr.TYPE = #{filter.arrangementType}
+        </if>
+        <if test="filter.derivativeId != null and filter.derivativeId.size() > 0">
+            AND arr.PROD_DERIVATIVE_ID IN
+            <foreach item="item" index="index" collection="filter.derivativeId" open="(" separator="," close=")">
+                #{item}
+            </foreach>
+        </if>
+    </sql>
+    <select id="retrieveMatchedArrangementCount" resultType="com.fiats.tmgcoreutils.payload.ReportingMatchedArrangementDTO">
+        <include refid="com.fiats.arrangement.mapper.ReportingMapper.reportCounter"/>
+        FROM ARRANGEMENT arr
+            INNER JOIN ARRANGEMENT_PARTY poa ON (arr.ID = poa.ARRANGEMENT_ID AND poa.ROLE = 'OWNER')
+            INNER JOIN ARRANGEMENT_OPERATION oa ON arr.ID = oa.ARRANGEMENT_ID
+            INNER JOIN ARRANGEMENT_RELATION ra ON (arr.ID = ra.RELATED_ARRANGEMENT_ID AND ra.TYPE = 1)
+            INNER JOIN ARRANGEMENT_OPERATION oma ON ra.ID = oma.ARRANGEMENT_RELATION_ID
+            INNER JOIN ARRANGEMENT marr ON (ra.ARRANGEMENT_ID = marr.ID AND marr.TYPE = 3)
+            INNER JOIN ARRANGEMENT_PRICING pma on marr.ID = pma.ARRANGEMENT_ID
+            LEFT JOIN ARRANGEMENT_PARTY pba ON (arr.ID = pba.ARRANGEMENT_ID AND pba.ROLE = 'BROKER')
+        WHERE arr.STATUS = 1
+            AND arr.TYPE IN (1, 2)
+            AND oma.PAYMENT_STATUS = 1
+            AND oma.DELIVERY_STATUS = 1
+        <include refid="com.fiats.arrangement.mapper.ReportingMapper.retrieveMatchedArrangementWhere"/>
+    </select>
+    <select id="retrieveMatchedArrangement" resultType="com.fiats.tmgcoreutils.payload.ArrangementInfoDTO">
+        SELECT  arr.id arrangementId
+                , marr.ID matchedId
+                , oa.CUSTOMER_STATUS customerStatus
+                , oa.CONTRACT_STATUS contractStatus
+                , oma.PAYMENT_STATUS paymentStatus
+                , oma.DELIVERY_STATUS deliveryStatus
+                , arr.CODE arrangementCode
+                , arr.TYPE arrangementType
+                , arr.TRADING_DATE tradingDate
+                , marr.TRADING_DATE matchingDate
+                , oma.PAYMENT_STATUS_DATE paymentDate
+                , oma.DELIVERY_STATUS_DATE deliveryDate
+                , poa.CUSTOMER_ID partyId
+                , pba.CUSTOMER_ID brokerId
+                , (SELECT CUSTOMER_ID FROM ARRANGEMENT_PARTY WHERE ARRANGEMENT_ID = marr.ID AND CUSTOMER_ID != poa.CUSTOMER_ID AND ROWNUM = 1) counterId
+                , arr.PROD_VANILLA_CODE vanillaCode
+                , arr.PROD_DERIVATIVE_CODE derivativeCode
+                , marr.VOLUME volume
+                , pma.PRICE price
+                , pma.PRINCIPAL principal
+                , arr.STATUS status
+                , arr.LISTED_TYPE listedStatus
+                , arr.AGENCY_ID agencyId
+                , arr.AGENCY_CODE agencyCode
+        FROM ARRANGEMENT arr
+            INNER JOIN ARRANGEMENT_PARTY poa ON (arr.ID = poa.ARRANGEMENT_ID AND poa.ROLE = 'OWNER')
+            INNER JOIN ARRANGEMENT_OPERATION oa ON arr.ID = oa.ARRANGEMENT_ID
+            INNER JOIN ARRANGEMENT_RELATION ra ON (arr.ID = ra.RELATED_ARRANGEMENT_ID AND ra.TYPE = 1)
+            INNER JOIN ARRANGEMENT_OPERATION oma ON ra.ID = oma.ARRANGEMENT_RELATION_ID
+            INNER JOIN ARRANGEMENT marr ON (ra.ARRANGEMENT_ID = marr.ID AND marr.TYPE = 3)
+            INNER JOIN ARRANGEMENT_PRICING pma on marr.ID = pma.ARRANGEMENT_ID
+            LEFT JOIN ARRANGEMENT_PARTY pba ON (arr.ID = pba.ARRANGEMENT_ID AND pba.ROLE = 'BROKER')
+        WHERE arr.STATUS = 1
+            AND arr.TYPE IN (1, 2)
+            AND oma.PAYMENT_STATUS = 1
+            AND oma.DELIVERY_STATUS = 1
+        <include refid="com.fiats.arrangement.mapper.ReportingMapper.retrieveMatchedArrangementWhere"/>
+        ORDER BY arr.TRADING_DATE DESC, arr.CREATED_DATE DESC
+    </select>
+
+    <sql id="retrievePaymentArrangementWhere">
+        <if test="filter.tradingDate != null">
+            AND arr.TRADING_DATE = #{filter.tradingDate}
+        </if>
+        <if test="filter.customerId != null">
+            AND poa.CUSTOMER_ID = #{filter.customerId}
+        </if>
+        <if test="filter.arrangementCode != null and filter.arrangementCode != ''">
+            <bind name="pattern" value="'%' + filter.arrangementCode + '%'" />
+            AND arr.CODE like #{pattern}
+        </if>
+    </sql>
+    <select id="retrievePaymentArrangementCount" resultType="com.fiats.tmgcoreutils.payload.ReportingMatchedArrangementDTO">
+        <include refid="com.fiats.arrangement.mapper.ReportingMapper.reportCounter"/>
+        FROM ARRANGEMENT arr
+        INNER JOIN ARRANGEMENT_PARTY poa ON (arr.ID = poa.ARRANGEMENT_ID AND poa.ROLE = 'OWNER')
+        INNER JOIN ARRANGEMENT_OPERATION oa ON arr.ID = oa.ARRANGEMENT_ID
+        INNER JOIN ARRANGEMENT_RELATION ra ON (arr.ID = ra.RELATED_ARRANGEMENT_ID AND ra.TYPE = 1)
+        INNER JOIN ARRANGEMENT_OPERATION oma ON ra.ID = oma.ARRANGEMENT_RELATION_ID
+        INNER JOIN ARRANGEMENT marr ON (ra.ARRANGEMENT_ID = marr.ID AND marr.TYPE = 3)
+        INNER JOIN ARRANGEMENT_PRICING pma on marr.ID = pma.ARRANGEMENT_ID
+        WHERE arr.STATUS = 1
+        AND oma.PAYMENT_STATUS = 0
+        AND arr.TYPE = 2
+        <include refid="com.fiats.arrangement.mapper.ReportingMapper.retrievePaymentArrangementWhere"/>
+    </select>
+    <select id="retrievePaymentArrangement" resultType="com.fiats.tmgcoreutils.payload.ArrangementInfoDTO">
+        SELECT  arr.id arrangementId
+                , marr.ID matchedId
+                , oa.CUSTOMER_STATUS customerStatus
+                , oa.CONTRACT_STATUS contractStatus
+                , oma.PAYMENT_STATUS paymentStatus
+                , oma.DELIVERY_STATUS deliveryStatus
+                , arr.CODE arrangementCode
+                , arr.TYPE arrangementType
+                , arr.TRADING_DATE tradingDate
+                , marr.TRADING_DATE matchingDate
+                , oma.PAYMENT_STATUS_DATE paymentDate
+                , oma.DELIVERY_STATUS_DATE deliveryDate
+                , poa.CUSTOMER_ID partyId
+                , arr.PROD_VANILLA_CODE vanillaCode
+                , arr.PROD_DERIVATIVE_CODE derivativeCode
+                , marr.VOLUME volume
+                , pma.PRICE price
+                , pma.PRINCIPAL principal
+                , arr.STATUS status
+                , arr.LISTED_TYPE listedStatus
+                , arr.AGENCY_ID agencyId
+                , arr.AGENCY_CODE agencyCode
+        FROM ARRANGEMENT arr
+            INNER JOIN ARRANGEMENT_PARTY poa ON (arr.ID = poa.ARRANGEMENT_ID AND poa.ROLE = 'OWNER')
+            INNER JOIN ARRANGEMENT_OPERATION oa ON arr.ID = oa.ARRANGEMENT_ID
+            INNER JOIN ARRANGEMENT_RELATION ra ON (arr.ID = ra.RELATED_ARRANGEMENT_ID AND ra.TYPE = 1)
+            INNER JOIN ARRANGEMENT_OPERATION oma ON ra.ID = oma.ARRANGEMENT_RELATION_ID
+            INNER JOIN ARRANGEMENT marr ON (ra.ARRANGEMENT_ID = marr.ID AND marr.TYPE = 3)
+            INNER JOIN ARRANGEMENT_PRICING pma on marr.ID = pma.ARRANGEMENT_ID
+        WHERE arr.STATUS = 1
+        AND oma.PAYMENT_STATUS = 0
+        AND arr.TYPE = 2
+        <include refid="com.fiats.arrangement.mapper.ReportingMapper.retrievePaymentArrangementWhere"/>
+        ORDER BY arr.TRADING_DATE DESC, arr.CREATED_DATE DESC
+    </select>
+
+    <sql id="retrieveSummaryArrangementWhere">
+        <if test="filter.tradingDate != null">
+            AND arr.TRADING_DATE = #{filter.tradingDate}
+        </if>
+        <if test="filter.customerId != null">
+            AND poa.CUSTOMER_ID = #{filter.customerId}
+        </if>
+        <if test="filter.brokerId != null">
+            AND pba.CUSTOMER_ID = #{filter.brokerId}
+        </if>
+        <if test="filter.agencyId != null">
+            AND arr.AGENCY_ID = #{filter.agencyId}
+        </if>
+        <if test="filter.arrangementCode != null and filter.arrangementCode != ''">
+            <bind name="pattern" value="'%' + filter.arrangementCode + '%'" />
+            AND arr.CODE like #{pattern}
+        </if>
+        <if test="filter.arrangementType != null">
+            AND arr.TYPE = #{filter.arrangementType}
+        </if>
+        <if test="filter.arrangementStatus != null">
+            <if test="filter.arrangementStatus == 1">
+                AND arr.STATUS = 3 AND oa.CUSTOMER_STATUS = 0
+            </if>
+            <if test="filter.arrangementStatus == 2">
+                AND arr.STATUS = 0 AND oa.CUSTOMER_STATUS = 0
+            </if>
+            <if test="filter.arrangementStatus == 3">
+                AND arr.STATUS = 0 AND oa.CUSTOMER_STATUS = 1
+            </if>
+            <if test="filter.arrangementStatus == 4">
+                AND arr.STATUS = 1 AND oa.CUSTOMER_STATUS = 1 AND oma.PAYMENT_STATUS = 0
+            </if>
+            <if test="filter.arrangementStatus == 5">
+                AND arr.STATUS = 1 AND oa.CUSTOMER_STATUS = 1 AND oma.PAYMENT_STATUS = 1 AND oma.DELIVERY_STATUS = 0
+            </if>
+            <if test="filter.arrangementStatus == 6">
+                AND arr.STATUS = 1 AND oa.CUSTOMER_STATUS = 1 AND oma.PAYMENT_STATUS = 1 AND oma.DELIVERY_STATUS = 1
+            </if>
+            <if test="filter.arrangementStatus == 7">
+                AND arr.STATUS = 2
+            </if>
+        </if>
+        <if test="filter.derivativeId != null and filter.derivativeId.size() > 0">
+            AND arr.PROD_DERIVATIVE_ID IN
+            <foreach item="item" index="index" collection="filter.derivativeId" open="(" separator="," close=")">
+                #{item}
+            </foreach>
+        </if>
+    </sql>
+    <select id="retrieveSummaryArrangementCount" resultType="com.fiats.tmgcoreutils.payload.ReportingMatchedArrangementDTO">
+        <include refid="com.fiats.arrangement.mapper.ReportingMapper.reportCounter"/>
+        FROM ARRANGEMENT arr
+        INNER JOIN ARRANGEMENT_PARTY poa ON (arr.ID = poa.ARRANGEMENT_ID AND poa.ROLE = 'OWNER')
+        INNER JOIN ARRANGEMENT_OPERATION oa ON arr.ID = oa.ARRANGEMENT_ID
+        INNER JOIN ARRANGEMENT_PRICING pa ON arr.ID = pa.ARRANGEMENT_ID
+        LEFT JOIN ARRANGEMENT_RELATION ra ON (arr.ID = ra.RELATED_ARRANGEMENT_ID AND ra.TYPE = 1)
+        LEFT JOIN ARRANGEMENT_OPERATION oma ON ra.ID = oma.ARRANGEMENT_RELATION_ID
+        LEFT JOIN ARRANGEMENT marr ON (ra.ARRANGEMENT_ID = marr.ID AND marr.TYPE = 3)
+        LEFT JOIN ARRANGEMENT_PRICING pma on marr.ID = pma.ARRANGEMENT_ID
+        LEFT JOIN ARRANGEMENT_PARTY pba ON (arr.ID = pba.ARRANGEMENT_ID AND pba.ROLE = 'BROKER')
+        WHERE 1 = 1
+        AND arr.TYPE IN (1, 2)
+        <include refid="com.fiats.arrangement.mapper.ReportingMapper.retrieveSummaryArrangementWhere"/>
+    </select>
+    <select id="retrieveSummaryArrangement" resultType="com.fiats.tmgcoreutils.payload.ArrangementInfoDTO">
+        SELECT  arr.id arrangementId
+                , marr.ID matchedId
+                , oa.CUSTOMER_STATUS customerStatus
+                , oa.CONTRACT_STATUS contractStatus
+                , oma.PAYMENT_STATUS paymentStatus
+                , oma.DELIVERY_STATUS deliveryStatus
+                , arr.CODE arrangementCode
+                , arr.TYPE arrangementType
+                , arr.TRADING_DATE tradingDate
+                , marr.TRADING_DATE matchingDate
+                , oma.PAYMENT_STATUS_DATE paymentDate
+                , oma.DELIVERY_STATUS_DATE deliveryDate
+                , poa.CUSTOMER_ID partyId
+                , pba.CUSTOMER_ID brokerId
+                , (SELECT CUSTOMER_ID FROM ARRANGEMENT_PARTY WHERE ARRANGEMENT_ID = marr.ID AND CUSTOMER_ID != poa.CUSTOMER_ID AND ROWNUM = 1) counterId
+                , arr.PROD_VANILLA_CODE vanillaCode
+                , arr.PROD_DERIVATIVE_CODE derivativeCode
+                , arr.VOLUME volume
+                , pa.PRICE price
+                , pa.PRINCIPAL principal
+                , arr.STATUS status
+                , arr.LISTED_TYPE listedStatus
+                , arr.AGENCY_ID agencyId
+                , arr.AGENCY_CODE agencyCode
+        FROM ARRANGEMENT arr
+            INNER JOIN ARRANGEMENT_PARTY poa ON (arr.ID = poa.ARRANGEMENT_ID AND poa.ROLE = 'OWNER')
+            INNER JOIN ARRANGEMENT_OPERATION oa ON arr.ID = oa.ARRANGEMENT_ID
+            INNER JOIN ARRANGEMENT_PRICING pa ON arr.ID = pa.ARRANGEMENT_ID
+            LEFT JOIN ARRANGEMENT_RELATION ra ON (arr.ID = ra.RELATED_ARRANGEMENT_ID AND ra.TYPE = 1)
+            LEFT JOIN ARRANGEMENT_OPERATION oma ON ra.ID = oma.ARRANGEMENT_RELATION_ID
+            LEFT JOIN ARRANGEMENT marr ON (ra.ARRANGEMENT_ID = marr.ID AND marr.TYPE = 3)
+            LEFT JOIN ARRANGEMENT_PRICING pma on marr.ID = pma.ARRANGEMENT_ID
+            LEFT JOIN ARRANGEMENT_PARTY pba ON (arr.ID = pba.ARRANGEMENT_ID AND pba.ROLE = 'BROKER')
+        WHERE 1 = 1
+            AND arr.TYPE IN (1, 2)
+        <include refid="com.fiats.arrangement.mapper.ReportingMapper.retrieveSummaryArrangementWhere"/>
+        ORDER BY arr.TRADING_DATE DESC, arr.CREATED_DATE DESC
+    </select>
+</mapper>
